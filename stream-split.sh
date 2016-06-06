@@ -19,7 +19,7 @@ s/--name (\\s*-+\\s*)?($TIMESPEC)\\b(.*) --endname/--timespec \\2\\n--name \\5 -
 t frontrep
 # back loop: extract any timespec at the end
 : backrep
-s/--name (.*)\\b($TIMESPEC)(\\s*-+\\s*)? --endname/--name \\1 --endname\\n--timespec \\2/g;
+s/--name (.*[^:])\\b($TIMESPEC)(\\s*-+\\s*)? --endname/--name \\1 --endname\\n--timespec \\2/g;
 t backrep
 # Last stanza only: add an extra timespec to correctly position last track
 \$s/\$/\\n--timespec -0:00/
