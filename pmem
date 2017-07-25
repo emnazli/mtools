@@ -1,0 +1,142 @@
+#!/bin/bash
+
+megs=0;
+human=0;
+help=0;
+user="";
+summary="";
+
+AWK_NICE_PRINT='
+	
+	function nice_print(cmd, total, megs, human) {
+
+		printf "%s ", cmd
+		if (human) {
+			if (total < 1024) {
+				printf "%.1fKb\n", total;
+			} else if (total < 1024 * 1024) {
+				printf "%.1fMb\n", total / 1024.0;
+			} else {
+				printf "%.1fGb\n", total / 1024.0 / 1024.0;
+			}
+		} else if (megs) {
+			printf "%.1f\n", total / 1024.0
+		} else {
+			print total;
+		}
+	}
+'
+
+function pmem() {
+
+	name=$1;
+
+	ps $user -C "$name" -o rss | awk -v cmd="$name" -v "megs=$megs" -v "human=$human" "$AWK_NICE_PRINT"'
+		BEGIN 	{ 
+			total = 0; lines = 0;
+		}
+				{ 
+			if (lines > 0) 
+				total = total + $1; 
+			lines = lines + 1;
+		}
+		END		{ 
+			if (lines > 1) {
+				nice_print(cmd, total, megs, human);
+			}
+		}
+	'
+}
+
+function print_help() {
+	
+	cat <<END_HELP
+$0: print cummulative (resident) memory usage by a command, or all processes
+	This command is a frontend to ps command. 
+	You need to have also the sort, getopt and awk commands installed.
+
+$0 [-h|--human] [-m|--mega|--megabytes] [--help] [-u|--user username] (-- command ... | -e)
+
+	-h|--human			human friendly sizes
+	-m|--mega[bytes]		sizes in megabytes. no -h, or -m option implies size in Kb
+	--help				print this help
+	-e				select all processes, print summary sorted by size (reverse)
+	-u||--user			select processes owned by user
+
+	If no -e option, or command is given, but only -- the default behaviour is to summarize
+	the output of ps
+	
+END_HELP
+}
+
+function print_summary() {
+	
+	ps $user -wwo rss,cmd --no-headers | awk '
+		{ mem[$2] += $1; } 
+	END { 
+		for (p in mem) { 
+			total = mem[p];
+			printf "%s %d\n", p, mem[p];
+		} 
+	}' | sort -r -n -k 2 | awk -v "megs=$megs" -v "human=$human" "$AWK_NICE_PRINT"' { nice_print($1, $2, megs, human); }'
+}
+
+if [[ $# -eq 0 ]]; then
+	print_help;
+	exit 0;
+fi
+
+for command in sort awk ps; do
+	which $command &> /dev/null || (echo "$0: command $command is not found." >&2; exit 1;)
+done
+
+eval set -- $(getopt -s bash -o 'ehmu:' -l 'help,human,mega,megabytes,username:' --name "$0" -- "$@")
+
+until [[ $1 = -- ]]; do
+
+	case $1 in
+	-e)
+		summary=yes;	
+		;;
+	-h|--human)	
+		human=1;
+		;;
+	-m|--mega|--megabytes)
+		megs=1;
+		;;
+	--help)
+		help=yes;
+		;;
+	-u|--username)
+		shift;
+		user="-u $1";
+		;;
+	*)
+		echo "$0: unexpected option $1" >&2;
+		exit 1;
+		;;
+	esac
+	shift;
+done
+
+if [[ $help = yes ]]; then
+	print_help;
+	exit 0;
+fi
+
+if [[ $summary = yes ]]; then
+	if [[ $user == '' ]]; then
+		user="-e "
+	fi;
+	print_summary;
+	exit 0;
+fi
+
+shift;
+
+if [[ $# -gt 0 ]]; then
+	for arg; do pmem "$arg"; done
+else
+	print_summary;
+fi
+
